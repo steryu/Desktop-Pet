@@ -7,9 +7,9 @@ from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPainterPath
 from PySide6.QtWidgets import QApplication, QMenu, QWidget
 
 import save as savemod
-from bowl import BowlWindow
+from furniture import Home
 from hud import StatusHud
-from stats import ENERGY_SLEEP_PER_S, Stats
+from stats import BED_BONUS, ENERGY_SLEEP_PER_S, Stats
 
 # ---------- settings you can tweak ----------
 TICK_MS = 33              # ~30 fps
@@ -18,7 +18,13 @@ MAX_FALL_SPEED = 30
 DRAG_THRESHOLD = 5        # pixels the mouse must move before a click becomes a drag
 SLEEP_CHANCE = 0.15       # base chance to nap after reaching a spot, rises as energy drops
 TIRED_AT = 25             # below this energy it always naps at the next stop
+BED_AT = 70               # naps below this energy are taken in the bed
 IDLE_CHANCE = 0.20        # chance to just stand around for a moment
+PLAY_CHANCE = 0.15        # chance to go and play with the ball after reaching a spot
+PLAY_MIN_ENERGY = 35      # too tired to play below this
+KICKS = (2, 4)            # kicks per play session
+RUN = 1.8                 # speed multiplier while chasing the ball
+CHASE_GIVE_UP_S = 8
 SLEEP_MIN_S, SLEEP_MAX_S = 6, 20
 SLEEP_LONGEST_S = 60
 EAT_S = 4
@@ -58,12 +64,19 @@ class PetWindow(QWidget):
         self.stats = Stats(data)
         self.mood = self.stats.mood(time.time())
         self.hud = StatusHud(self.stats)
-        self.bowl = BowlWindow(data.get("bowl") or {}, self.area, self.on_bowl_filled)
+        self.home = Home(data, self.area, self.on_furniture)
+        self.bowl = self.home.first("bowl")
+        self.bed = self.home.first("bed")
+        self.ball = self.home.first("ball")
         self.hovering = False
 
         # state machine
         self.state = "walk"        # walk | idle | sleep | eat | held | fall | hop
-        self.goal = None           # None = wandering, "eat" = heading for the bowl
+        self.goal = None           # None = wandering, else heading for: "eat" | "bed" | "ball"
+        self.goal_side = 1         # approach the goal from the left (1) or right (-1)
+        self.chase_ticks = 0
+        self.play_left = 0         # kicks left in this play session
+        self.in_bed = False
         self.facing = 1
         self.frame = 0
         self.t = 0
@@ -113,6 +126,10 @@ class PetWindow(QWidget):
     def on_ground(self):
         return abs(self.y - self.ground_y("walk")) < 6
 
+    def clamp_x(self, x):
+        a = self.area()
+        return min(max(x, a.x()), a.x() + a.width() - self.species.width)
+
     # ------------------------------------------------------------------
     # behaviour
     # ------------------------------------------------------------------
@@ -127,40 +144,38 @@ class PetWindow(QWidget):
         self.state = "walk"
 
     def next_move(self):
-        """After a rest: eat if hungry and there's food, otherwise wander."""
+        """After a rest: eat if hungry and there's food, nap if exhausted, else wander."""
+        self.in_bed = False
         if self.wants_food():
-            self.go_eat()
+            self.set_goal("eat")
+        elif self.stats.energy < TIRED_AT:
+            self.go_sleep()
         else:
             self.pick_target()
 
     def decide(self):
-        """Reached a wander spot: nap, stand around or keep going."""
+        """Reached a wander spot: nap, play, stand around or keep going."""
         if self.wants_food():
-            self.go_eat()
+            self.set_goal("eat")
             return
         energy = self.stats.energy
         if energy < TIRED_AT:
-            self.start_sleep()
+            self.go_sleep()
+            return
+        if random.random() < PLAY_CHANCE and self.go_play():
             return
         sleep = SLEEP_CHANCE + (1 - energy / 100) * 0.5
         idle = IDLE_CHANCE * (2 if self.mood in MOPEY else 1)
         r = random.random()
         if r < sleep:
-            self.start_sleep()
+            self.go_sleep()
         elif r < sleep + idle:
             self.start_idle()
         else:
             self.pick_target()
 
-    def start_sleep(self):
-        self.state = "sleep"
-        need = (95 - self.stats.energy) / ENERGY_SLEEP_PER_S
-        secs = max(random.uniform(SLEEP_MIN_S, SLEEP_MAX_S), min(need, SLEEP_LONGEST_S))
-        self.timer_ticks = int(secs * 1000 / TICK_MS)
-        if self.on_ground():
-            self.y = self.ground_y("sleep")      # lying body sits a bit lower
-
     def start_idle(self):
+        self.goal = None
         self.state = "idle"
         self.timer_ticks = int(random.uniform(1, 3) * 1000 / TICK_MS)
 
@@ -169,27 +184,78 @@ class PetWindow(QWidget):
         if self.state in ("walk", "idle", "sleep"):
             self.next_move()
 
+    # ---------- walking to furniture ----------
+    def goal_item(self):
+        return {"eat": self.bowl, "bed": self.bed, "ball": self.ball}.get(self.goal)
+
+    def goal_x(self, side):
+        """Window x that puts the right body part on the goal, approaching from side."""
+        w = self.species.width
+        if self.goal == "eat":                   # head over the bowl
+            head_x = self.species.head_for("eat")[0]
+            bx = self.bowl.center_x()
+            return bx - head_x if side > 0 else bx - (w - head_x)
+        if self.goal == "bed":                   # centred on the cushion
+            return self.bed.center_x() - w / 2
+        reach = self.species.reach_x             # ball: nose touching it
+        if side > 0:
+            return self.ball.fx - reach + 2
+        return self.ball.fx + self.ball.W - (w - reach) - 2
+
+    def set_goal(self, goal):
+        self.goal = goal
+        side = 1 if self.x + self.species.width / 2 < self.goal_item().center_x() else -1
+        if self.clamp_x(self.goal_x(side)) != self.goal_x(side):
+            side = -side                         # no room on that side (screen edge)
+        self.goal_side = side
+        self.chase_ticks = 0
+        self.state = "walk"
+        self.retarget()
+
+    def retarget(self):
+        """Furniture can move (dragged, rolling), so aim again every tick."""
+        if self.goal == "ball":                  # the ball rolls past: follow it round
+            w = self.species.width
+            self.goal_side = 1 if self.x + w / 2 < self.ball.center_x() else -1
+        self.tx = self.clamp_x(self.goal_x(self.goal_side))
+        self.ty = self.ground_y()
+
+    def arrive(self):
+        goal, item = self.goal, self.goal_item()
+        if goal is None:
+            self.decide()
+        elif goal == "ball":
+            if item.on_ground() and not item.dragging:
+                self.kick_ball()
+            # else: it's in the air or in your hand, keep waiting under it
+        elif not item.resting():
+            self.start_idle()                    # it's being carried around: think again
+        elif goal == "eat":
+            self.start_eat()
+        elif goal == "bed":
+            self.start_sleep(in_bed=True)
+
+    def on_furniture(self, event, item):
+        """Something happened to a piece of furniture: "picked", "landed" or "used"."""
+        self.raise_()                            # stay drawn in front of furniture
+        if event == "picked":
+            if item is self.bowl and self.state == "eat":
+                self.start_idle()
+            elif item is self.bed and self.in_bed:
+                self.in_bed = False              # bed pulled out from under it
+                self.state = "fall"
+                self.vy = 0
+            return
+        if self.state not in ("walk", "idle"):
+            return
+        if item is self.bowl and self.goal != "eat" and self.wants_food():
+            self.set_goal("eat")
+        elif item is self.ball and event == "used" and self.goal is None:
+            self.go_play()
+
     # ---------- food ----------
     def wants_food(self):
-        return self.bowl.full and self.stats.is_hungry()
-
-    def on_bowl_filled(self):
-        self.raise_()                            # stay drawn in front of the bowl
-        if self.state in ("walk", "idle") and self.goal != "eat" and self.wants_food():
-            self.go_eat()
-
-    def go_eat(self):
-        """Walk to the spot where the head ends up right over the bowl."""
-        w = self.species.width
-        head_x = self.species.head_for("eat")[0]
-        bx = self.bowl.center_x()
-        from_left = self.x + w / 2 < bx
-        tx = bx - head_x if from_left else bx - (w - head_x)
-        a = self.area()
-        self.tx = min(max(tx, a.x()), a.x() + a.width() - w)
-        self.ty = self.ground_y()
-        self.goal = "eat"
-        self.state = "walk"
+        return self.bowl is not None and self.bowl.full and self.stats.is_hungry()
 
     def start_eat(self):
         self.goal = None
@@ -207,6 +273,47 @@ class PetWindow(QWidget):
             self.spawn_hearts()
             self.react(ev)
         self.start_idle()
+
+    # ---------- sleep ----------
+    def go_sleep(self):
+        if self.bed is not None and self.stats.energy < BED_AT:
+            self.set_goal("bed")
+        else:
+            self.start_sleep()
+
+    def start_sleep(self, in_bed=False):
+        self.goal = None
+        self.state = "sleep"
+        self.in_bed = in_bed
+        rate = ENERGY_SLEEP_PER_S * (BED_BONUS if in_bed else 1)
+        need = (95 - self.stats.energy) / rate
+        secs = max(random.uniform(SLEEP_MIN_S, SLEEP_MAX_S), min(need, SLEEP_LONGEST_S))
+        self.timer_ticks = int(secs * 1000 / TICK_MS)
+        if in_bed:
+            self.y = self.ground_y("sleep") - self.bed.LIFT
+        elif self.on_ground():
+            self.y = self.ground_y("sleep")      # lying body sits a bit lower
+
+    # ---------- play ----------
+    def go_play(self):
+        if self.ball is None or self.stats.energy <= PLAY_MIN_ENERGY:
+            return False
+        self.play_left = random.randint(*KICKS)
+        self.set_goal("ball")
+        return True
+
+    def kick_ball(self):
+        self.facing = self.goal_side
+        self.ball.kick(self.facing * random.uniform(5, 9))
+        ev = self.stats.play(time.time())
+        if ev["rewarded"]:
+            self.spawn_hearts(2)
+            self.react(ev)
+        self.play_left -= 1
+        if self.play_left > 0 and self.stats.energy > PLAY_MIN_ENERGY:
+            self.set_goal("ball")                # chase it again
+        else:
+            self.start_idle()
 
     # ---------- affection ----------
     def react(self, ev, purr=False):
@@ -229,6 +336,7 @@ class PetWindow(QWidget):
         if ev["rewarded"]:
             self.react(ev, purr=self.stats.has(2))
         if self.stats.has(3) and self.state in ("walk", "idle") and self.on_ground():
+            self.goal = None
             self.state = "hop"
             self.vy = -HOP_SPEED
 
@@ -244,27 +352,13 @@ class PetWindow(QWidget):
     def tick(self):
         self.t += 1
         now = time.time()
-        self.stats.update(now, sleeping=(self.state == "sleep"))
+        self.home.tick()
+        self.stats.update(now, sleeping=(self.state == "sleep"), in_bed=self.in_bed)
         if self.t % 30 == 0:
             self.mood = self.stats.mood(now)
 
         if self.state == "walk":
-            dx, dy = self.tx - self.x, self.ty - self.y
-            dist = math.hypot(dx, dy)
-            speed = self.species.walk_speed * MOOD_SPEED.get(self.mood, 1.0)
-            if dist <= speed:
-                self.x, self.y = self.tx, self.ty
-                if self.goal == "eat":
-                    self.start_eat()
-                else:
-                    self.decide()
-            else:
-                self.x += dx / dist * speed
-                self.y += dy / dist * speed
-                if abs(dx) > 1:
-                    self.facing = 1 if dx > 0 else -1
-                if self.t % 6 == 0:
-                    self.frame = (self.frame + 1) % 4
+            self.walk()
 
         elif self.state in ("idle", "sleep"):
             self.timer_ticks -= 1
@@ -292,6 +386,29 @@ class PetWindow(QWidget):
         self.move(int(self.x), int(self.y))
         self.update_hud()
         self.update()
+
+    def walk(self):
+        speed = self.species.walk_speed * MOOD_SPEED.get(self.mood, 1.0)
+        if self.goal:
+            self.chase_ticks += 1
+            if self.goal == "ball":
+                speed *= RUN
+                if self.chase_ticks > CHASE_GIVE_UP_S * 1000 / TICK_MS:
+                    self.start_idle()            # it got away
+                    return
+            self.retarget()
+        dx, dy = self.tx - self.x, self.ty - self.y
+        dist = math.hypot(dx, dy)
+        if dist <= speed:
+            self.x, self.y = self.tx, self.ty
+            self.arrive()
+            return
+        self.x += dx / dist * speed
+        self.y += dy / dist * speed
+        if abs(dx) > 1:
+            self.facing = 1 if dx > 0 else -1
+        if self.t % (3 if self.goal == "ball" else 6) == 0:
+            self.frame = (self.frame + 1) % 4
 
     # ------------------------------------------------------------------
     # status panel on hover
@@ -405,6 +522,7 @@ class PetWindow(QWidget):
             self._dragging = True
             self.state = "held"
             self.goal = None
+            self.in_bed = False
             self.vy = 0
         if self._dragging:
             top_left = cur - self._grab_offset
@@ -424,9 +542,10 @@ class PetWindow(QWidget):
 
     def show_menu(self, global_pos):
         menu = QMenu(self)
-        fill = menu.addAction("Fill food bowl")
-        fill.setEnabled(not self.bowl.full)
-        fill.triggered.connect(self.bowl.fill)
+        if self.bowl is not None:
+            fill = menu.addAction("Fill food bowl")
+            fill.setEnabled(not self.bowl.full)
+            fill.triggered.connect(self.bowl.fill)
         coins = menu.addAction(f"Coins: {self.stats.coins}")
         coins.setEnabled(False)
         menu.addSeparator()
@@ -440,6 +559,7 @@ class PetWindow(QWidget):
 
     # ------------------------------------------------------------------
     def save_state(self):
+        self.data.pop("bowl", None)              # pre-furniture saves kept it here
         self.data.update({
             "species": self.species.name,
             "taskbar_only": self.taskbar_only,
@@ -447,6 +567,6 @@ class PetWindow(QWidget):
             "y": int(self.y),
             "times_petted": self.times_petted,
             "stats": self.stats.to_dict(time.time()),
-            "bowl": self.bowl.to_dict(),
+            "furniture": self.home.to_list(),
         })
         savemod.save(self.data)

@@ -30,6 +30,11 @@ class Decay(unittest.TestCase):
         s.update(T0 + 10, sleeping=True)
         self.assertAlmostEqual(s.energy, 20 + st.ENERGY_SLEEP_PER_S * 10, places=3)
 
+    def test_bed_recovers_faster(self):
+        s = fresh(energy=20.0)
+        s.update(T0 + 10, sleeping=True, in_bed=True)
+        self.assertAlmostEqual(s.energy, 20 + st.ENERGY_SLEEP_PER_S * st.BED_BONUS * 10, places=3)
+
     def test_needs_never_drop_below_floor(self):
         s = fresh(fullness=st.FLOOR + 1, energy=st.FLOOR + 1)
         s.update(T0 + 50, sleeping=False)
@@ -124,6 +129,33 @@ class Feeding(unittest.TestCase):
     def test_hungry_threshold(self):
         self.assertTrue(fresh(fullness=st.HUNGRY_AT - 1).is_hungry())
         self.assertFalse(fresh(fullness=st.HUNGRY_AT).is_hungry())
+
+
+class Playing(unittest.TestCase):
+    def test_play_rewards_affection_and_costs_energy(self):
+        s = fresh(energy=80.0)
+        ev = s.play(T0)
+        self.assertTrue(ev["rewarded"])
+        self.assertEqual(s.affection, st.PLAY_AFFECTION)
+        self.assertAlmostEqual(s.energy, 80 - st.PLAY_ENERGY)
+
+    def test_play_cooldown_still_tires(self):
+        s = fresh(energy=80.0)
+        s.play(T0)
+        ev = s.play(T0 + 1)
+        self.assertFalse(ev["rewarded"])
+        self.assertEqual(s.affection, st.PLAY_AFFECTION)
+        self.assertAlmostEqual(s.energy, 80 - 2 * st.PLAY_ENERGY)
+
+    def test_play_cheers_up(self):
+        s = fresh(fullness=75.0, energy=75.0 + 4 * st.PLAY_ENERGY)
+        for i in range(4):
+            s.play(T0 + i * st.PLAY_COOLDOWN_S)
+        self.assertEqual(s.mood(T0 + 60), "happy")
+
+    def test_play_level_up(self):
+        s = fresh(affection=st.LEVELS[1][0] - 1)
+        self.assertEqual(s.play(T0)["level_up"], st.LEVELS[1][1])
 
 
 class Levels(unittest.TestCase):

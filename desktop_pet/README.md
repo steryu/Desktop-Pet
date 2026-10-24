@@ -15,11 +15,14 @@
 - Click the pet to pet it (hearts, affection, coins)
 - Hover over the pet to see its status: mood, food, energy, love level, coins
 - Click the food bowl to fill it; the pet walks over and eats when it's hungry
+- Click the ball to kick it, or drag and throw it; the pet chases it and plays
+- Drag the bowl, bed or ball anywhere; let go and it falls back to the ground
 - Right-click: fill food bowl / coins / toggle "Only walk on taskbar" / Quit
 
 ## Care
 - Food drops slowly and energy drains while awake; naps refill energy.
-  Tired pets nap more often and for longer.
+  Tired pets nap more often and for longer, and go to their bed, where they recover twice as fast.
+- Playing with the ball tires the pet a little and grows affection (at most once every 8 s).
 - While the app is closed, food keeps dropping (counted for at most 8 hours) and the
   pet rests. A neglected pet only gets sad: needs never drop below 10 and affection
   never goes down.
@@ -32,7 +35,7 @@
 - `main.pyw`        starts the app
 - `pet.py`          pet window, state machine, dragging, hearts, feeding, unlocks
 - `stats.py`        food, energy, affection, coins, mood (no Qt, unit-tested)
-- `bowl.py`         food bowl window
+- `furniture.py`    bed, food bowl, ball: one shared furniture system. Add new objects to `KINDS`.
 - `hud.py`          status panel shown on hover
 - `save.py`         load/save JSON in %APPDATA%\DesktopPet\save.json (~/DesktopPet/save.json elsewhere)
 - `species/`        one file per animal (drawing + traits). Add new animals here.

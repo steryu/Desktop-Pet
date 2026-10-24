@@ -28,10 +28,9 @@ A transparent, always-on-top pet that lives on your desktop. It walks, sleeps, g
 - `pet.py`: the pet window, state machine, and behavior
 - `species/cat.py`: cat drawing and traits (more species later)
 - `stats.py`: hunger, energy, affection, mood, coins
-- `bowl.py`: food bowl window (Phase 2; moves into the furniture system in Phase 3)
 - `hud.py`: status bars shown on hover
 - `save.py`: load and save game data
-- `furniture.py`: bed, bowl, toys (Phase 3)
+- `furniture.py`: bed, bowl, toys (ball): shared furniture system
 - `store.py`: items and coins (Phase 5)
 
 ## Phases
@@ -59,10 +58,10 @@ A transparent, always-on-top pet that lives on your desktop. It walks, sleeps, g
 
 ### Phase 3: Furniture and home
 
-- [ ] Draggable pet bed; the pet sleeps there when tired and recovers faster
-- [ ] Draggable food bowl
-- [ ] Toys the pet chases and plays with
-- [ ] Shared furniture system for easy new objects
+- [x] Draggable pet bed; the pet sleeps there when tired and recovers faster
+- [x] Draggable food bowl
+- [x] Toys the pet chases and plays with
+- [x] Shared furniture system for easy new objects
 
 ### Phase 4: Personality
 

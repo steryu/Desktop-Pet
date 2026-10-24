@@ -11,6 +11,7 @@ class Species:
     feet_y = 90          # y of the feet inside the drawing area while standing
     sleep_feet_y = 90    # y of the bottom of the body while sleeping
     walk_speed = 2.0     # pixels per tick
+    reach_x = 90         # x of the front of the body (nose), facing right: where it touches toys
 
     def head_for(self, pose: str):
         """Where hearts should appear (x, y), facing right, in drawing coords."""

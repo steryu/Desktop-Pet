@@ -45,6 +45,7 @@ class Cat(Species):
     feet_y = 78
     sleep_feet_y = 82
     walk_speed = 2.0
+    reach_x = 98
 
     def head_for(self, pose):
         if pose == "sleep":
