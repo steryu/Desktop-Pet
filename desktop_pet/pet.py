@@ -8,13 +8,17 @@ from PySide6.QtWidgets import QApplication, QMenu, QWidget
 
 import accessories
 import desktop_windows
+import paths
 import personality
 import save as savemod
+import screens
 import store
 from bubble import SpeechBubble
 from butterfly import Butterfly
 from furniture import Home
 from hud import StatusHud
+from sounds import Sounds
+from species import get_species
 from stats import ENERGY_SLEEP_PER_S, Stats
 
 # ---------- settings you can tweak ----------
@@ -69,6 +73,7 @@ FURNITURE_GOALS = ("eat", "bed", "toy")
 class PetWindow(QWidget):
     def __init__(self, species, data):
         super().__init__()
+        self._positioned = False
         self.species = species
         self.data = data
 
@@ -86,6 +91,12 @@ class PetWindow(QWidget):
         self.climb = bool(data.get("climb_windows", True))
         self.speech = bool(data.get("speech", True))
         self.times_petted = int(data.get("times_petted", 0))
+        self.sprite_pack = data.get("sprite_pack")       # None = the built-in drawing
+        self.sounds = Sounds(paths.data_dir(), enabled=bool(data.get("sound", True)),
+                             volume=float(data.get("volume", 0.5)))
+        self.hidden = False
+        self.tray = None                                 # set by main when there's a tray
+        self.settings_window = None
 
         self.stats = Stats(data)
         self.mood = self.stats.mood(time.time())
@@ -134,12 +145,15 @@ class PetWindow(QWidget):
         self.night_said = False
         self.butterflies = []
 
-        # position (top-left of the window, as floats)
-        a = self.area()
+        # position (top-left of the window, as floats), on whichever screen it was saved on
         sx, sy = data.get("x"), data.get("y")
         if sx is None or sy is None:
+            a = QGuiApplication.primaryScreen().availableGeometry()
             sx = random.uniform(a.x(), a.x() + a.width() - species.width)
-            sy = self.ground_y()
+            sy = a.y() + a.height() - PAD_TOP - species.feet_y
+        self.x, self.y = float(sx), float(sy)
+        self._positioned = True
+        a = self.area()
         self.x = min(max(float(sx), a.x()), a.x() + a.width() - species.width)
         self.y = min(max(float(sy), a.y() - PAD_TOP), self.ground_y())
         if self.y < self.ground_y() - 2:
@@ -170,8 +184,10 @@ class PetWindow(QWidget):
     # geometry helpers
     # ------------------------------------------------------------------
     def area(self):
-        """Usable screen area (excludes the taskbar)."""
-        return QGuiApplication.primaryScreen().availableGeometry()
+        """Usable area (excludes the taskbar) of the screen the pet is on."""
+        if not self._positioned:                 # still in __init__
+            return QGuiApplication.primaryScreen().availableGeometry()
+        return screens.area_at(self.center_x(), self.y + PAD_TOP + self.species.feet_y - 4)
 
     def floor_top(self):
         a = self.area()
@@ -421,6 +437,7 @@ class PetWindow(QWidget):
             self.pick_target()
             return
         self.state = "eat"
+        self.sounds.play("munch")
         self.facing = 1 if self.bowl.center_x() > self.center_x() else -1
         self.timer_ticks = int(EAT_S * 1000 / TICK_MS)
 
@@ -481,6 +498,7 @@ class PetWindow(QWidget):
     def kick_toy(self):
         self.facing = self.goal_side
         self.toy.kick(self.facing * random.uniform(*self.toy.KICK))
+        self.sounds.play("kick")
         self.played()
         self.play_left -= 1
         if self.play_left > 0 and self.stats.energy > PLAY_MIN_ENERGY:
@@ -495,6 +513,7 @@ class PetWindow(QWidget):
         self.vy = -min(math.sqrt(2 * GRAVITY * rise), 13)
         self.vx = max(-4.0, min(4.0, (tx - hx) / 12))
         self.state = "hop"
+        self.sounds.play("boing")
         self.played()
 
     def played(self):
@@ -510,12 +529,13 @@ class PetWindow(QWidget):
             self.perches = []
         else:
             a, w = self.area(), self.species.width
-            scale = QGuiApplication.primaryScreen().devicePixelRatio()
+            scale = screens.screen_at(self.center_x(), self.feet()).devicePixelRatio()
             self.perches = desktop_windows.perches(
                 desktop_windows.window_rects(scale),
                 min_width=w + 2 * EDGE_MARGIN,
                 min_top=a.y() + self.species.height,
-                max_top=self.floor_top() - 60)
+                max_top=self.floor_top() - 60,
+                x_range=(a.x(), a.x() + a.width()))      # windows on this screen only
         if self.perch is None:
             return
         old = self.perch
@@ -565,6 +585,7 @@ class PetWindow(QWidget):
             return
         rise = self.feet() - live[0]["top"] + 30
         self.vy = -math.sqrt(2 * GRAVITY * rise)
+        self.sounds.play("boing")
         self.vx = 0.0
         self.goal = None
         self.state = "jump"
@@ -603,6 +624,8 @@ class PetWindow(QWidget):
         if where is False:
             return
         jumped = self.state == "jump"
+        if self.vy > 12:
+            self.sounds.play("thud")             # a proper drop, not a little hop
         self.leaving = None
         self.perch = where
         self.y = self.surface_y()
@@ -622,6 +645,7 @@ class PetWindow(QWidget):
             texts.append(("prr", PURR_TEXT))
         if ev.get("coins"):
             texts.append((f"+{ev['coins']}", COIN_TEXT))
+            self.sounds.play("coin")
         if ev.get("level_up"):
             texts.append((f"{ev['level_up']}!", HEART))
             self.say("level_up", force=True)
@@ -633,20 +657,25 @@ class PetWindow(QWidget):
         self.times_petted += 1
         ev = self.stats.pet(time.time())
         self.spawn_hearts(5 if self.stats.has(1) else 3)
+        self.sounds.play("pop")
         if ev["rewarded"]:
             self.react(ev, purr=self.stats.has(2))
+            if self.stats.has(2):
+                self.sounds.play("purr")
             if random.random() < 0.25:
                 self.say(self.mood, force=True)
         if self.stats.has(3) and self.state in ("walk", "idle") and self.on_surface():
             self.goal = None
             self.state = "hop"
             self.vx, self.vy = 0.0, -HOP_SPEED
+            self.sounds.play("boing")
 
     def maybe_gift(self):
         if not self.stats.has(4) or self.state not in ("walk", "idle"):
             return
         if random.random() < (TICK_MS / 1000) / GIFT_EVERY_S:
             self.stats.add_coins(GIFT_COINS)
+            self.sounds.play("coin")
             self.spawn_text("gift!", HEART)
             self.spawn_text(f"+{GIFT_COINS}", COIN_TEXT, delay=14)
 
@@ -659,6 +688,8 @@ class PetWindow(QWidget):
             return
         self.bubble.say(personality.line(kind))
         self.last_talk = now
+        if random.random() < 0.4:
+            self.sounds.play("meow")
 
     def greet(self):
         away = self.stats.away_s
@@ -672,6 +703,7 @@ class PetWindow(QWidget):
         """First visit of the day pays a bonus (checked again when the date changes)."""
         coins = self.stats.daily_bonus(time.time())
         if coins:
+            self.sounds.play("coin")
             self.spawn_text(f"+{coins}", COIN_TEXT, delay=20)
             self.spawn_text("daily bonus", COIN_TEXT, delay=34)
 
@@ -708,7 +740,8 @@ class PetWindow(QWidget):
         if name == "butterfly":
             if self.perch is not None:
                 return                           # it flies low, over the ground
-            b = Butterfly(self.area)
+            here = self.area()
+            b = Butterfly(lambda: here)          # stays on this screen
             b.show()
             self.butterflies.append(b)
             self.pounces_left = 3
@@ -720,6 +753,7 @@ class PetWindow(QWidget):
             self.set_goal("zoom")
         elif name == "coin":
             self.stats.add_coins(2)
+            self.sounds.play("coin")
             self.spawn_text("+2", COIN_TEXT)
         elif name == "sneeze":
             if self.on_surface():
@@ -773,6 +807,9 @@ class PetWindow(QWidget):
     def tick(self):
         self.t += 1
         now = time.time()
+        if self.hidden:                          # tucked away in the tray: time still passes
+            self.stats.update(now, sleeping=True)
+            return
         self.home.tick()
         bonus = self.sleep_bed.BONUS if self.sleep_bed is not None else 1
         self.stats.update(now, sleeping=(self.state == "sleep"), in_bed=self.in_bed, bed_bonus=bonus)
@@ -1009,6 +1046,9 @@ class PetWindow(QWidget):
             act.setChecked(value)
             act.toggled.connect(slot)
         menu.addSeparator()
+        menu.addAction("Settings…").triggered.connect(self.open_settings)
+        if self.tray is not None:
+            menu.addAction("Hide (find me in the tray)").triggered.connect(lambda: self.set_hidden(True))
         menu.addAction("Quit").triggered.connect(QApplication.quit)
         menu.exec(global_pos)
 
@@ -1037,6 +1077,49 @@ class PetWindow(QWidget):
         menu.exec(QCursor.pos())
 
     # ------------------------------------------------------------------
+    # settings (the settings window, tray and menus call these)
+    # ------------------------------------------------------------------
+    def open_settings(self):
+        from settings_window import SettingsWindow  # only built when first opened
+        if self.settings_window is None:
+            self.settings_window = SettingsWindow(self)
+        self.settings_window.sync()
+        self.settings_window.show()
+        self.settings_window.raise_()
+        self.settings_window.activateWindow()
+
+    def set_hidden(self, hidden):
+        self.hidden = bool(hidden)
+        windows = [self] + self.home.items + self.butterflies
+        for w in windows:
+            w.setVisible(not self.hidden)
+        if self.hidden:
+            self.hud.hide()
+            self.bubble.hide()
+            self.bubble.ticks_left = 0
+        else:
+            self.raise_()
+            if self.state == "held":
+                self.state = "fall"
+
+    def set_sound(self, on):
+        self.sounds.set_enabled(on)
+
+    def set_volume(self, v):
+        self.sounds.set_volume(v)
+
+    def set_art(self, pack):
+        """Switch between the built-in drawing (None) and a sprite pack."""
+        species = get_species(self.data.get("species", "cat"), pack, paths.sprite_folders())
+        self.sprite_pack = pack if getattr(species, "pack", None) == pack else None
+        self.species = species
+        self.setFixedSize(species.width, species.height + PAD_TOP)
+        self.goal = None
+        self.in_bed = False
+        self.perch = None
+        self.state, self.vx, self.vy = "fall", 0.0, 0.0   # settle onto the ground again
+
+    # ------------------------------------------------------------------
     # store actions (the store window and menus call these)
     # ------------------------------------------------------------------
     def open_store(self):
@@ -1052,6 +1135,7 @@ class PetWindow(QWidget):
     def buy(self, item_id):
         if not self.inventory.buy(item_id, self.stats, self.species.name):
             return False
+        self.sounds.play("coin")
         kind = store.ITEMS[item_id]["kind"]
         if kind == "furniture":
             self.place(item_id)
@@ -1097,6 +1181,7 @@ class PetWindow(QWidget):
             return
         it = store.ITEMS["treat"]
         ev = self.stats.snack(time.time(), food=it["food"], love=it["love"])
+        self.sounds.play("munch")
         self.spawn_hearts(4)
         self.react(ev)
         self.say("treat", force=True)
@@ -1116,6 +1201,9 @@ class PetWindow(QWidget):
             "taskbar_only": self.taskbar_only,
             "climb_windows": self.climb,
             "speech": self.speech,
+            "sound": self.sounds.enabled,
+            "volume": round(self.sounds.volume, 2),
+            "sprite_pack": self.sprite_pack,
             "x": int(self.x),
             "y": int(self.y),
             "times_petted": self.times_petted,

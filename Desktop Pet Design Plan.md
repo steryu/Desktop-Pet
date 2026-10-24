@@ -11,7 +11,7 @@ A transparent, always-on-top pet that lives on your desktop. It walks, sleeps, g
 - **Language:** Python 3
 - **UI framework:** PySide6 (Qt). Gives per-pixel transparency, smooth drawing, sprite support, tray icon, and easy dragging.
 - **Save data:** a JSON file in `%APPDATA%\DesktopPet\`
-- **Packaging (later):** PyInstaller, one `.exe`
+- **Packaging:** PyInstaller (`desktop_pet.spec`): one `.exe` on Windows, a `.app` on macOS
 
 ## Architecture principles
 
@@ -88,12 +88,12 @@ A transparent, always-on-top pet that lives on your desktop. It walks, sleeps, g
 
 ### Phase 6: Polish and sharing
 
-- [ ] Real sprite art (your own or free packs)
-- [ ] Sound effects with a mute option
-- [ ] System tray icon and settings window
-- [ ] Start with Windows
-- [ ] Multi-monitor support
-- [ ] Packaged `.exe`
+- [ ] Real sprite art (your own or free packs). Sprite-sheet renderer and a template pack (`sprites/cat_template`) are done; the art itself still needs painting
+- [x] Sound effects with a mute option
+- [x] System tray icon and settings window
+- [x] Start with Windows (also macOS and Linux)
+- [x] Multi-monitor support
+- [ ] Packaged `.exe`. `build_windows.bat` + `desktop_pet.spec` are ready; the macOS `.app` builds and runs, the `.exe` hasn't been built on Windows yet
 
 ## Store and coins (details to refine)
 

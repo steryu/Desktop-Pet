@@ -11,14 +11,17 @@ import os
 import sys
 
 
-def perches(rects, min_width, min_top, max_top):
+def perches(rects, min_width, min_top, max_top, x_range=None):
     """Visible top-edge segments: [{"id", "left", "x1", "x2", "top"}].
-    "left" is the window's own left edge, used to follow a window that moves."""
+    "left" is the window's own left edge, used to follow a window that moves.
+    x_range: only the part between these x's (the pet's screen)."""
     out = []
     for i, (wid, x1, y1, x2, _y2) in enumerate(rects):
         if not (min_top <= y1 <= max_top):
             continue
         segs = [(x1, x2)]
+        if x_range is not None:
+            segs = [(max(x1, x_range[0]), min(x2, x_range[1]))]
         for _fid, fx1, fy1, fx2, fy2 in rects[:i]:       # windows in front of this one
             if fy1 <= y1 <= fy2:
                 segs = _subtract(segs, fx1, fx2)

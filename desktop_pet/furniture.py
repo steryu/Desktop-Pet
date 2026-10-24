@@ -13,6 +13,8 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import QWidget
 
+import screens
+
 GRAVITY = 1.0
 MAX_FALL_SPEED = 30
 DRAG_THRESHOLD = 5
@@ -27,7 +29,7 @@ class Furniture(QWidget):
 
     def __init__(self, data, area, notify):
         super().__init__()
-        self.area = area                  # callable returning the usable screen rect
+        self._place_area = area           # where new items go: the pet's screen
         self.notify = notify              # notify(event, item): "picked", "landed", "used", "menu"
 
         self.setWindowFlags(
@@ -42,8 +44,10 @@ class Furniture(QWidget):
         if self.tooltip:
             self.setToolTip(self.tooltip)
 
-        a = area()
-        x = data.get("x")
+        x, y = data.get("x"), data.get("y")
+        if x is not None and y is not None:   # saved: back on the screen it was on
+            self._place_area = lambda a=screens.area_at(x + self.W / 2, y + self.H / 2): a
+        a = self._place_area()
         if x is None:
             x = a.x() + a.width() * self.DEFAULT_AT - self.W / 2
         self.fx = self.clamp_x(float(x))
@@ -56,6 +60,12 @@ class Furniture(QWidget):
         self.move(int(self.fx), int(self.fy))
 
     # ---------- geometry ----------
+    def area(self):
+        """Usable area of the screen this item is on."""
+        if not hasattr(self, "fy"):
+            return self._place_area()
+        return screens.area_at(self.fx + self.W / 2, self.fy + self.H / 2)
+
     def ground(self):
         a = self.area()
         return a.y() + a.height() - self.H
@@ -156,7 +166,7 @@ class Furniture(QWidget):
         pass
 
     def to_dict(self):
-        return {"kind": self.kind, "x": int(self.fx)}
+        return {"kind": self.kind, "x": int(self.fx), "y": int(self.fy)}
 
 
 # ----------------------------------------------------------------------
@@ -517,7 +527,7 @@ class Home:
     """All furniture on the desktop (what's placed; the rest is in the inventory)."""
 
     def __init__(self, data, area, notify):
-        self.area, self.notify = area, notify
+        self.area, self.notify = area, notify    # area: the pet's screen, for new items
         entries = data.get("furniture")
         if entries is None:                # older saves: just a bowl
             old_bowl = data.get("bowl") or {}

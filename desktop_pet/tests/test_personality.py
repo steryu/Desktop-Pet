@@ -32,6 +32,14 @@ class Perches(unittest.TestCase):
         rects = [(1, 0, 300, 80, 600), (2, 0, 10, 900, 600), (3, 0, 950, 900, 1000)]
         self.assertEqual(dw.perches(rects, min_width=100, min_top=50, max_top=900), [])
 
+    def test_only_the_part_on_this_screen(self):
+        rects = [(1, 1500, 300, 2300, 700)]                    # straddles two 1728-wide screens
+        left = dw.perches(rects, 100, 50, 900, x_range=(0, 1728))
+        right = dw.perches(rects, 100, 50, 900, x_range=(1728, 3456))
+        self.assertEqual([(s["x1"], s["x2"]) for s in left], [(1500, 1728)])
+        self.assertEqual([(s["x1"], s["x2"]) for s in right], [(1728, 2300)])
+        self.assertEqual(dw.perches(rects, 100, 50, 900, x_range=(3456, 5000)), [])
+
     def test_maximized_window_hides_everything_behind(self):
         rects = [(1, 0, 33, 1728, 1117), (2, 519, 148, 1209, 772)]
         self.assertEqual(dw.perches(rects, min_width=140, min_top=120, max_top=900), [])

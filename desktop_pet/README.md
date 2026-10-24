@@ -10,6 +10,12 @@
 1. In this folder:  `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`
 2. `.venv/bin/python main.py`
 
+## Build an app to share
+- Windows: run `build_windows.bat` → `dist\DesktopPet.exe` (one file, no Python needed)
+- macOS: run `./build_mac.sh` → `dist/Desktop Pet.app` (lives in the menu bar, no Dock icon)
+
+Both use `desktop_pet.spec` (PyInstaller). Build on the system you're building for.
+
 ## Controls
 - Drag the pet with the left mouse button, drop it and it falls to the taskbar (Dock on macOS)
 - Click the pet to pet it (hearts, affection, coins)
@@ -22,6 +28,8 @@
 - Right-click the pet: Store, give a treat, fill the food bowl (kibble or store food), toggles
   (walk on surfaces only, climb on windows, speech bubbles), Quit
 - Right-click furniture: fill the bowl, put it away, open the store
+- Tray icon (menu bar on macOS): hide / show the pet, store, settings, sound, quit
+- Settings: behaviour toggles, sound on/off and volume, art style, start at login
 
 ## Care
 - Food drops slowly and energy drains while awake; naps refill energy.
@@ -35,6 +43,15 @@
   Soulmate (250) the odd gift of coins.
 - Coins: +1 per petting (up to 20 a day), +1 per play (up to 15 a day), +3 per meal, and a daily
   bonus of 10 for the first visit of the day, +2 for each day in a row (up to 20).
+
+## Polish
+- Sound effects (meow, purr, munch, coins, boing...), generated in code; mute or set the volume
+  in Settings or the tray.
+- Multi-monitor: drag the pet to another screen and it lives there; furniture remembers its screen.
+- Start at login: Windows (Run key), macOS (LaunchAgent), Linux (autostart entry).
+- Sprite art: pick a sprite pack under Settings > Look. `tools/export_sprites.py` writes the
+  built-in cat as `sprites/cat_template` to paint over; put your own packs in
+  `<save folder>/sprites/<name>/`. Format: see `species/sprite.py`.
 
 ## Store
 - Food: treats (from your hand), fresh fish and tuna (go in the bowl; bigger meals, more love).
@@ -68,4 +85,13 @@
 - `desktop_windows.py` reads other apps' windows (ctypes, macOS + Windows) for perching
 - `save.py`         load/save JSON in %APPDATA%\DesktopPet\save.json (~/DesktopPet/save.json elsewhere)
 - `species/`        one file per animal (drawing + traits). Add new animals here.
+- `sounds.py`       synthesised sound effects + player
+- `tray.py`, `settings_window.py`  tray icon and settings window
+- `autostart.py`    start at login on Windows / macOS / Linux
+- `screens.py`      which monitor a point is on
+- `icons.py`        app / tray icon drawn from the species
+- `paths.py`        app folder vs save folder (works when packaged)
+- `species/sprite.py`  sprite-sheet species; `sprites/` holds packs
+- `tools/`          `export_sprites.py` (sprite template), `make_icons.py` (assets/ icons)
+- `desktop_pet.spec`, `build_windows.bat`, `build_mac.sh`  packaging
 - `tests/`          `python -m unittest discover -s tests`
