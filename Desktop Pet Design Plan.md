@@ -31,6 +31,9 @@ A transparent, always-on-top pet that lives on your desktop. It walks, sleeps, g
 - `hud.py`: status bars shown on hover
 - `save.py`: load and save game data
 - `furniture.py`: bed, bowl, toys (ball): shared furniture system
+- `personality.py`: time of day, idle choices, speech lines, random events
+- `bubble.py`, `butterfly.py`: speech bubble and event critter windows
+- `desktop_windows.py`: other apps' windows, for sitting on top of them
 - `store.py`: items and coins (Phase 5)
 
 ## Phases
@@ -65,12 +68,12 @@ A transparent, always-on-top pet that lives on your desktop. It walks, sleeps, g
 
 ### Phase 4: Personality
 
-- [ ] Idle animations: sit, groom, stretch, yawn, look around
-- [ ] Reactions to the mouse cursor
-- [ ] Time-of-day behavior (sleepier at night)
-- [ ] Speech bubbles
-- [ ] Sitting on top of other windows
-- [ ] Random events
+- [x] Idle animations: sit, groom, stretch, yawn, look around
+- [x] Reactions to the mouse cursor
+- [x] Time-of-day behavior (sleepier at night)
+- [x] Speech bubbles
+- [x] Sitting on top of other windows
+- [x] Random events
 
 ### Phase 5: Store and economy
 

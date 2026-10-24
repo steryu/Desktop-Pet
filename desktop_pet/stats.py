@@ -65,8 +65,10 @@ class Stats:
         self._last_play_reward = None
         self._recent_pets = []
         self._last_update = now
+        self.away_s = 0                    # how long the app was closed
         if s.get("last_seen") is not None:
-            self.catch_up(now - float(s["last_seen"]))
+            self.away_s = max(0.0, now - float(s["last_seen"]))
+            self.catch_up(self.away_s)
 
     # ------------------------------------------------------------------
     # time passing

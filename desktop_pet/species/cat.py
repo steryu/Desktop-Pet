@@ -9,6 +9,7 @@ BODY = QColor("#e8964a")
 DARK = QColor("#b86a28")
 BELLY = QColor("#f6d9b0")
 NOSE = QColor("#d9567a")
+MOUTH = QColor("#7a2e3b")
 BLACK = QColor("#111111")
 
 
@@ -31,6 +32,21 @@ def stroke(p, path, color, width):
     p.drawPath(path)
 
 
+def eye_shift(look):
+    """Pupil offset for a look direction (dx, dy) in -1..1, facing right."""
+    if not look:
+        return 0, 0
+    return look[0] * 2.5, look[1] * 2.0
+
+
+def closed_eyes(p, centres):
+    """Happy closed eyes: little upward arcs."""
+    p.setPen(QPen(BLACK, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    for cx, cy in centres:
+        p.drawArc(QRectF(cx - 4, cy - 3, 8, 7), 20 * 16, 140 * 16)
+
+
 def line(p, x1, y1, x2, y2, color, width):
     path = QPainterPath()
     path.moveTo(x1, y1)
@@ -40,6 +56,13 @@ def line(p, x1, y1, x2, y2, color, width):
 
 class Cat(Species):
     name = "cat"
+    idle_anims = {                           # idle animation -> how long it lasts (s)
+        "sit": (5, 12),
+        "groom": (3, 6),
+        "stretch": (2, 3),
+        "yawn": (1.6, 2.2),
+        "look": (2.5, 4),
+    }
     width = 110
     height = 90
     feet_y = 78
@@ -52,10 +75,14 @@ class Cat(Species):
             return 70, 50
         if pose == "eat":                    # x is also where the bowl lines up
             return 82, 48
+        if pose in ("sit", "groom"):
+            return 71, 24
+        if pose == "stretch":
+            return 83, 56
         return 78, 36
 
     # ------------------------------------------------------------------
-    def paint(self, p, pose, facing, t, frame):
+    def paint(self, p, pose, facing, t, frame, look=None):
         p.save()
         if facing < 0:                       # mirror when facing left
             p.translate(self.width, 0)
@@ -67,15 +94,25 @@ class Cat(Species):
             self._held(p, t)
         elif pose == "eat":
             self._eat(p, t)
+        elif pose == "sit":
+            self._sit(p, t, look)
+        elif pose == "groom":
+            self._groom(p, t)
+        elif pose == "stretch":
+            self._stretch(p, t)
+        elif pose == "yawn":
+            self._stand(p, t, frame, moving=False, yawn=max(0.0, math.sin(t * 0.12)))
         else:
-            self._stand(p, t, frame, moving=(pose == "walk"))
+            if pose == "look" and look is None:  # gazing around on its own
+                look = (math.sin(t * 0.07), -0.3)
+            self._stand(p, t, frame, moving=(pose == "walk"), look=look)
         p.restore()
 
         if pose == "sleep":                  # text must not be mirrored
             self._zzz(p, t, facing)
 
     # ------------------------------------------------------------------
-    def _stand(self, p, t, frame, moving):
+    def _stand(self, p, t, frame, moving, look=None, yawn=0.0):
         bob = 1 if (moving and frame % 2) else 0
         wag = math.sin(t * (0.25 if moving else 0.1)) * (6 if moving else 4)
 
@@ -106,12 +143,100 @@ class Cat(Species):
         poly(p, [(64, 26 + bob), (66, 8 + bob), (78, 22 + bob)])
         poly(p, [(80, 22 + bob), (92, 8 + bob), (96, 28 + bob)])
 
-        # eyes + nose
-        fill(p, BLACK)
-        oval(p, 74, 32 + bob, 80, 40 + bob)
-        oval(p, 88, 32 + bob, 94, 40 + bob)
+        # eyes + nose (+ mouth when yawning)
+        if yawn > 0.15:
+            closed_eyes(p, ((77, 36 + bob), (91, 36 + bob)))
+            fill(p, MOUTH)
+            oval(p, 88, 46 + bob, 98, 47 + bob + 10 * yawn)
+        else:
+            ex, ey = eye_shift(look)
+            fill(p, BLACK)
+            oval(p, 74 + ex, 32 + bob + ey, 80 + ex, 40 + bob + ey)
+            oval(p, 88 + ex, 32 + bob + ey, 94 + ex, 40 + bob + ey)
         fill(p, NOSE)
         poly(p, [(92, 44 + bob), (98, 44 + bob), (95, 48 + bob)])
+
+    # ------------------------------------------------------------------
+    def _sit_body(self, p, t):
+        """Shared by sit and groom: haunches down, tail curled round the front."""
+        flick = math.sin(t * 0.08) * 3
+        tail = QPainterPath()
+        tail.moveTo(40, 74)
+        tail.cubicTo(18, 82, 6, 72, 10 + flick, 58)
+        stroke(p, tail, DARK, 7)
+
+        fill(p, BODY)
+        oval(p, 28, 52, 62, 78)              # back thigh
+        oval(p, 36, 28, 76, 78)              # upright body
+        fill(p, BELLY)
+        oval(p, 50, 42, 72, 78)
+
+    def _sit(self, p, t, look):
+        self._sit_body(p, t)
+        fill(p, DARK)
+        oval(p, 58, 52, 66, 78)
+        oval(p, 66, 52, 74, 78)
+
+        fill(p, BODY)
+        oval(p, 52, 6, 90, 42)
+        poly(p, [(56, 14), (58, -4), (70, 8)])
+        poly(p, [(72, 8), (84, -4), (88, 16)])
+        ex, ey = eye_shift(look)
+        fill(p, BLACK)
+        oval(p, 66 + ex, 18 + ey, 72 + ex, 26 + ey)
+        oval(p, 80 + ex, 18 + ey, 86 + ex, 26 + ey)
+        fill(p, NOSE)
+        poly(p, [(84, 30), (90, 30), (87, 34)])
+
+    def _groom(self, p, t):
+        """Sitting, licking a raised front paw."""
+        lick = math.sin(t * 0.35) * 2
+        self._sit_body(p, t)
+        fill(p, DARK)
+        oval(p, 58, 52, 66, 78)              # the paw still on the ground
+
+        fill(p, BODY)
+        oval(p, 54, 12, 92, 48)              # head tipped down to the paw
+        poly(p, [(57, 20), (57, 2), (70, 14)])
+        poly(p, [(73, 13), (85, 1), (90, 21)])
+        closed_eyes(p, ((70, 26), (83, 26)))
+        fill(p, NOSE)
+        poly(p, [(86, 35), (92, 35), (89, 39)])
+
+        line(p, 68, 60, 86 + lick, 44 + lick, DARK, 9)   # raised paw
+        fill(p, MOUTH)
+        oval(p, 86, 40 + lick, 92, 45 + lick)            # tongue
+
+    def _stretch(self, p, t):
+        """Front down, back end up, front legs reaching forward."""
+        wag = math.sin(t * 0.1) * 4
+        tail = QPainterPath()
+        tail.moveTo(22, 38)
+        tail.quadTo(8, 14 + wag, 20, 0 + wag)
+        stroke(p, tail, DARK, 7)
+
+        fill(p, DARK)
+        oval(p, 22, 44, 32, 78)              # back legs straight
+        oval(p, 32, 44, 42, 78)
+        oval(p, 58, 68, 98, 77)              # front legs out along the floor
+        oval(p, 54, 70, 92, 78)
+
+        p.save()
+        p.translate(50, 52)
+        p.rotate(22)                         # body sloping down to the front
+        fill(p, BODY)
+        oval(p, -32, -15, 30, 15)
+        fill(p, BELLY)
+        oval(p, -22, 0, 22, 15)
+        p.restore()
+
+        fill(p, BODY)
+        oval(p, 66, 42, 100, 72)
+        poly(p, [(70, 48), (70, 32), (82, 44)])
+        poly(p, [(86, 44), (98, 32), (100, 52)])
+        closed_eyes(p, ((80, 55), (92, 55)))
+        fill(p, NOSE)
+        poly(p, [(96, 63), (102, 63), (99, 67)])
 
     # ------------------------------------------------------------------
     def _eat(self, p, t):
