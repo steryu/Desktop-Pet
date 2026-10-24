@@ -11,7 +11,8 @@ def main():
     app = QApplication(sys.argv)
     data = savemod.load()
     pet = PetWindow(get_species(data["species"]), data)
-    pet.show()
+    pet.bowl.show()
+    pet.show()                      # shown last so the pet is in front of the bowl
     app.aboutToQuit.connect(pet.save_state)
     sys.exit(app.exec())
 

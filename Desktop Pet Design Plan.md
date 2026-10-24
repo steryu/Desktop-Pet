@@ -27,7 +27,9 @@ A transparent, always-on-top pet that lives on your desktop. It walks, sleeps, g
 - `main.py`: starts the app
 - `pet.py`: the pet window, state machine, and behavior
 - `species/cat.py`: cat drawing and traits (more species later)
-- `stats.py`: hunger, energy, affection, mood
+- `stats.py`: hunger, energy, affection, mood, coins
+- `bowl.py`: food bowl window (Phase 2; moves into the furniture system in Phase 3)
+- `hud.py`: status bars shown on hover
 - `save.py`: load and save game data
 - `furniture.py`: bed, bowl, toys (Phase 3)
 - `store.py`: items and coins (Phase 5)
@@ -36,24 +38,24 @@ A transparent, always-on-top pet that lives on your desktop. It walks, sleeps, g
 
 ### Phase 1: Interaction and foundation
 
-- [ ] Move to PySide6 with a transparent overlay
-- [ ] Species system with the cat as the first species
-- [ ] State machine: walk, sleep, held, falling
-- [ ] Drag and drop with the left mouse button
-- [ ] Gravity: dropped pet falls and lands on the taskbar
-- [ ] Petting: click for hearts
-- [ ] Taskbar-only walking toggle (carried over)
-- [ ] Save and load position and settings
-- [ ] Right-click menu
+- [x] Move to PySide6 with a transparent overlay
+- [x] Species system with the cat as the first species
+- [x] State machine: walk, sleep, held, falling
+- [x] Drag and drop with the left mouse button
+- [x] Gravity: dropped pet falls and lands on the taskbar
+- [x] Petting: click for hearts
+- [x] Taskbar-only walking toggle (carried over)
+- [x] Save and load position and settings
+- [x] Right-click menu
 
 ### Phase 2: Stats and care
 
-- [ ] Hunger, energy, affection points, and a mood
-- [ ] Stats change over time, including while the app is closed (with a cap so a long absence is not cruel)
-- [ ] Food bowl and feeding
-- [ ] Status bars on hover
-- [ ] Affection levels that unlock behaviors
-- [ ] Earn coins from care actions (prepares for the store)
+- [x] Hunger, energy, affection points, and a mood
+- [x] Stats change over time, including while the app is closed (with a cap so a long absence is not cruel)
+- [x] Food bowl and feeding
+- [x] Status bars on hover
+- [x] Affection levels that unlock behaviors
+- [x] Earn coins from care actions (prepares for the store)
 
 ### Phase 3: Furniture and home
 
@@ -110,7 +112,7 @@ Ideas: dog, rabbit, hamster, bird, dragon, slime.
 
 ## Open questions
 
-- Should a neglected pet only be sad, or are there real consequences?
+- ~~Should a neglected pet only be sad, or are there real consequences?~~ Decided: only sad. Needs never drop below 10, affection never goes down.
 - Can the player own more than one pet at once?
 - Should coins also be earned just by keeping the app running?
 - Should there be growth stages (kitten to adult)?

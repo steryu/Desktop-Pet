@@ -17,6 +17,6 @@ class Species:
         return self.width * 0.7, self.height * 0.4
 
     def paint(self, p, pose: str, facing: int, t: int, frame: int):
-        """Draw the pet. pose: walk | idle | sleep | held | fall.
+        """Draw the pet. pose: walk | idle | sleep | eat | held | fall.
         facing: 1 = right, -1 = left. t = tick counter, frame = walk frame 0-3."""
         raise NotImplementedError

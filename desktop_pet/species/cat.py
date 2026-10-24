@@ -49,6 +49,8 @@ class Cat(Species):
     def head_for(self, pose):
         if pose == "sleep":
             return 70, 50
+        if pose == "eat":                    # x is also where the bowl lines up
+            return 82, 48
         return 78, 36
 
     # ------------------------------------------------------------------
@@ -62,6 +64,8 @@ class Cat(Species):
             self._sleep(p, t)
         elif pose in ("held", "fall"):
             self._held(p, t)
+        elif pose == "eat":
+            self._eat(p, t)
         else:
             self._stand(p, t, frame, moving=(pose == "walk"))
         p.restore()
@@ -107,6 +111,39 @@ class Cat(Species):
         oval(p, 88, 32 + bob, 94, 40 + bob)
         fill(p, NOSE)
         poly(p, [(92, 44 + bob), (98, 44 + bob), (95, 48 + bob)])
+
+    # ------------------------------------------------------------------
+    def _eat(self, p, t):
+        """Head down in the bowl, munching, eyes happily closed."""
+        munch = abs(math.sin(t * 0.5)) * 3
+        wag = math.sin(t * 0.1) * 4
+
+        tail = QPainterPath()
+        tail.moveTo(18, 42)
+        tail.quadTo(2, 32 + wag, 8, 14 + wag)
+        stroke(p, tail, DARK, 7)
+
+        fill(p, DARK)
+        for lx in (26, 34, 58, 66):
+            oval(p, lx, 60, lx + 10, 76)
+
+        fill(p, BODY)
+        oval(p, 16, 32, 76, 68)
+        fill(p, BELLY)
+        oval(p, 26, 48, 66, 68)
+
+        hy = 36 + munch                      # head top, bobbing while chewing
+        fill(p, BODY)
+        oval(p, 64, hy, 100, hy + 32)
+        poly(p, [(67, hy + 6), (66, hy - 10), (78, hy + 3)])
+        poly(p, [(84, hy + 3), (95, hy - 10), (98, hy + 8)])
+
+        p.setPen(QPen(BLACK, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        for ex in (78, 91):
+            p.drawArc(QRectF(ex - 4, hy + 12, 8, 7), 20 * 16, 140 * 16)
+        fill(p, NOSE)
+        poly(p, [(93, hy + 22), (99, hy + 22), (96, hy + 26)])
 
     # ------------------------------------------------------------------
     def _held(self, p, t):
