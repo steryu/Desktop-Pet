@@ -57,6 +57,8 @@ LINES = {
     "zoomies": ["Zoomies!", "Gotta go fast!"],
     "coin": ["Ooh, shiny!", "Found a coin!"],
     "sneeze": ["Achoo!", "*sneeze*"],
+    "gift": ["Ooh, for me?", "Thank you!", "I love it!"],
+    "treat": ["Yum!", "Nom nom nom!", "More, please?"],
 }
 
 

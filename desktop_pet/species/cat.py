@@ -81,6 +81,18 @@ class Cat(Species):
             return 83, 56
         return 78, 36
 
+    # where hats and collars go, per pose: (x, y, tilt)
+    HATS = {"sit": (71, 3, 0), "groom": (73, 9, 8), "stretch": (84, 40, 8),
+            "eat": (82, 34, 12), "held": (79, 6, 0), "fall": (79, 6, 0), "sleep": (70, 44, -8)}
+    NECKS = {"sit": (69, 42, 80), "groom": (68, 47, 60), "stretch": (70, 62, 30),
+             "eat": (66, 49, 20), "held": (65, 39, 25), "fall": (65, 39, 25), "sleep": None}
+
+    def hat_anchor(self, pose):
+        return self.HATS.get(pose, (79, 16, 0))
+
+    def neck_anchor(self, pose):
+        return self.NECKS.get(pose, (65, 47, 20))
+
     # ------------------------------------------------------------------
     def paint(self, p, pose, facing, t, frame, look=None):
         p.save()

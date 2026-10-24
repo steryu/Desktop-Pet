@@ -19,8 +19,9 @@
 - Drag the bowl, bed or ball anywhere; let go and it falls back to the ground
 - Wiggle the mouse near the pet and it chases the cursor and pounces; its eyes follow the cursor
 - Drop the pet above a window and it lands on top of it
-- Right-click: fill food bowl / coins / toggles (walk on surfaces only, climb on windows,
-  speech bubbles) / Quit
+- Right-click the pet: Store, give a treat, fill the food bowl (kibble or store food), toggles
+  (walk on surfaces only, climb on windows, speech bubbles), Quit
+- Right-click furniture: fill the bowl, put it away, open the store
 
 ## Care
 - Food drops slowly and energy drains while awake; naps refill energy.
@@ -32,7 +33,16 @@
 - Affection grows from petting and feeding. Levels unlock behaviours:
   Acquaintance (15) more hearts, Friend (50) purring, Best friend (120) happy hop,
   Soulmate (250) the odd gift of coins.
-- Coins: +1 per petting (up to 20 a day, 3 s cooldown), +3 per meal. Spent in the store later.
+- Coins: +1 per petting (up to 20 a day), +1 per play (up to 15 a day), +3 per meal, and a daily
+  bonus of 10 for the first visit of the day, +2 for each day in a row (up to 20).
+
+## Store
+- Food: treats (from your hand), fresh fish and tuna (go in the bowl; bigger meals, more love).
+  Kibble is always free.
+- Toys: ball, yarn ball, toy mouse. The pet plays with any toy that's out.
+- Furniture: pet bed, deluxe bed (naps recover 3x), potted plant, fish bowl.
+- Accessories: collars and hats, one of each worn at a time.
+- Inventory tab: give or serve food, place or put away furniture, wear or take off accessories.
 
 ## Personality
 - Idle animations: sits, grooms, stretches, yawns and looks around.
@@ -47,11 +57,14 @@
 - `main.pyw`        starts the app
 - `pet.py`          pet window, state machine, dragging, hearts, feeding, unlocks
 - `stats.py`        food, energy, affection, coins, mood (no Qt, unit-tested)
-- `furniture.py`    bed, food bowl, ball: one shared furniture system. Add new objects to `KINDS`.
+- `furniture.py`    beds, food bowl, toys, decorations: one shared furniture system. Add new objects to `KINDS`.
 - `hud.py`          status panel shown on hover
 - `personality.py`  time of day, idle choices, speech lines, random events (data, no Qt)
 - `bubble.py`       speech bubble window
 - `butterfly.py`    butterfly for the random event
+- `store.py`        store catalog and inventory (data, no Qt). Add new items here.
+- `store_window.py` the store window
+- `accessories.py`  draws hats and collars where the species says they go
 - `desktop_windows.py` reads other apps' windows (ctypes, macOS + Windows) for perching
 - `save.py`         load/save JSON in %APPDATA%\DesktopPet\save.json (~/DesktopPet/save.json elsewhere)
 - `species/`        one file per animal (drawing + traits). Add new animals here.

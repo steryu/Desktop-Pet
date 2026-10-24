@@ -18,6 +18,14 @@ class Species:
         """Where hearts should appear (x, y), facing right, in drawing coords."""
         return self.width * 0.7, self.height * 0.4
 
+    def hat_anchor(self, pose: str):
+        """(x, y, tilt degrees) of the top of the head for hats, facing right; None = hidden."""
+        return None
+
+    def neck_anchor(self, pose: str):
+        """(x, y, tilt degrees) of the neck for collars, facing right; None = hidden."""
+        return None
+
     def paint(self, p, pose: str, facing: int, t: int, frame: int, look=None):
         """Draw the pet. pose: walk | idle | sleep | eat | held | fall, or one of idle_anims.
         facing: 1 = right, -1 = left. t = tick counter, frame = walk frame 0-3.

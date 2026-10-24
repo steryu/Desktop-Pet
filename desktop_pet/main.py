@@ -9,6 +9,7 @@ from species import get_species
 
 def main():
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)   # closing the store mustn't quit; use the pet's menu
     data = savemod.load()
     pet = PetWindow(get_species(data["species"]), data)
     pet.home.show()

@@ -6,14 +6,16 @@ from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QCursor, QFont, QGuiApplication, QPainter, QPainterPath
 from PySide6.QtWidgets import QApplication, QMenu, QWidget
 
+import accessories
 import desktop_windows
 import personality
 import save as savemod
+import store
 from bubble import SpeechBubble
 from butterfly import Butterfly
 from furniture import Home
 from hud import StatusHud
-from stats import BED_BONUS, ENERGY_SLEEP_PER_S, Stats
+from stats import ENERGY_SLEEP_PER_S, Stats
 
 # ---------- settings you can tweak ----------
 TICK_MS = 33              # ~30 fps
@@ -24,11 +26,11 @@ SLEEP_CHANCE = 0.15       # base chance to nap after reaching a spot, rises as e
 TIRED_AT = 25             # below this energy it always naps at the next stop
 BED_AT = 70               # naps below this energy are taken in the bed
 IDLE_CHANCE = 0.30        # chance to sit, groom, stretch... after reaching a spot
-PLAY_CHANCE = 0.15        # chance to go and play with the ball after reaching a spot
+PLAY_CHANCE = 0.15        # chance to go and play with a toy after reaching a spot
 PLAY_MIN_ENERGY = 35      # too tired to play below this
 KICKS = (2, 4)            # kicks per play session
 RUN = 1.8                 # speed multiplier while chasing something
-GIVE_UP_S = {"ball": 8, "cursor": 5, "butterfly": 15}
+GIVE_UP_S = {"toy": 8, "cursor": 5, "butterfly": 15}
 SLEEP_MIN_S, SLEEP_MAX_S = 6, 20
 SLEEP_LONGEST_S = 60      # longest nap in daytime; longer at night
 EAT_S = 4
@@ -61,7 +63,7 @@ HEART = (235, 64, 98)
 COIN_TEXT = (196, 146, 0)
 PURR_TEXT = (140, 96, 170)
 AIRBORNE = ("fall", "hop", "jump")
-FURNITURE_GOALS = ("eat", "bed", "ball")
+FURNITURE_GOALS = ("eat", "bed", "toy")
 
 
 class PetWindow(QWidget):
@@ -89,10 +91,12 @@ class PetWindow(QWidget):
         self.mood = self.stats.mood(time.time())
         self.hud = StatusHud(self.stats)
         self.bubble = SpeechBubble()
+        self.inventory = store.Inventory(data)
+        self.store_window = None
         self.home = Home(data, self.area, self.on_furniture)
-        self.bowl = self.home.first("bowl")
-        self.bed = self.home.first("bed")
-        self.ball = self.home.first("ball")
+        self.resolve_furniture()
+        self.toy = None            # the toy it's playing with
+        self.sleep_bed = None      # the bed it's sleeping in
         self.hovering = False
 
         # state machine
@@ -295,7 +299,7 @@ class PetWindow(QWidget):
 
     # ---------- walking to things ----------
     def goal_item(self):
-        return {"eat": self.bowl, "bed": self.bed, "ball": self.ball}.get(self.goal)
+        return {"eat": self.bowl, "bed": self.bed, "toy": self.toy}.get(self.goal)
 
     def goal_center(self):
         """Screen x of what it's heading for."""
@@ -316,11 +320,11 @@ class PetWindow(QWidget):
             return bx - head_x if side > 0 else bx - (w - head_x)
         if self.goal == "bed":                   # centred on the cushion
             return self.bed.center_x() - w / 2
-        if self.goal == "ball":                  # nose touching it
+        if self.goal == "toy":                   # nose touching it
             reach = self.species.reach_x
             if side > 0:
-                return self.ball.fx - reach + 2
-            return self.ball.fx + self.ball.W - (w - reach) - 2
+                return self.toy.fx - reach + 2
+            return self.toy.fx + self.toy.W - (w - reach) - 2
         if self.goal in ("cursor", "butterfly"):  # nose right under it
             cx = self.goal_center()
             reach = self.species.reach_x
@@ -345,7 +349,7 @@ class PetWindow(QWidget):
 
     def retarget(self):
         """Things move (dragged, rolling, flying), so aim again every tick."""
-        if self.goal in ("ball", "cursor", "butterfly"):   # follow it round
+        if self.goal in ("toy", "cursor", "butterfly"):    # follow it round
             self.goal_side = 1 if self.center_x() < self.goal_center() else -1
         tx = self.goal_x(self.goal_side)
         self.tx = self.clamp_x(tx) if self.goal in ("edge", "perch") else self.clamp_walk(tx)
@@ -355,9 +359,9 @@ class PetWindow(QWidget):
         goal, item = self.goal, self.goal_item()
         if goal is None:
             self.decide()
-        elif goal == "ball":
+        elif goal == "toy":
             if item.on_ground() and not item.dragging:
-                self.kick_ball()
+                self.kick_toy()
             # else: it's in the air or in your hand, keep waiting under it
         elif goal in FURNITURE_GOALS and not item.resting():
             self.start_idle()                    # it's being carried around: think again
@@ -389,22 +393,23 @@ class PetWindow(QWidget):
             self.jump_down()
 
     def on_furniture(self, event, item):
-        """Something happened to a piece of furniture: "picked", "landed" or "used"."""
+        """Something happened to a piece of furniture: "picked", "landed", "used" or "menu"."""
         self.raise_()                            # stay drawn in front of furniture
+        if event == "menu":
+            self.furniture_menu(item)
+            return
         if event == "picked":
             if item is self.bowl and self.state == "eat":
                 self.start_idle()
-            elif item is self.bed and self.in_bed:
-                self.in_bed = False              # bed pulled out from under it
-                self.state = "fall"
-                self.vy = 0
+            elif item is self.sleep_bed and self.in_bed:
+                self.leave_bed()                 # bed pulled out from under it
             return
         if self.state not in ("walk", "idle"):
             return
         if item is self.bowl and self.goal != "eat" and self.wants_food():
             self.set_goal("eat")
-        elif item is self.ball and event == "used" and self.goal is None:
-            self.go_play()
+        elif getattr(item, "toy", False) and event == "used" and self.goal is None:
+            self.go_play(item)
 
     # ---------- food ----------
     def wants_food(self):
@@ -421,8 +426,9 @@ class PetWindow(QWidget):
 
     def finish_eat(self):
         if self.bowl.full:
+            food, love = store.meal(self.bowl.food)
             self.bowl.empty()
-            ev = self.stats.feed(time.time())
+            ev = self.stats.feed(time.time(), meal=food, love=love)
             self.spawn_hearts()
             self.react(ev)
         self.start_idle()
@@ -444,7 +450,8 @@ class PetWindow(QWidget):
         self.goal = None
         self.state = "sleep"
         self.in_bed = in_bed
-        rate = ENERGY_SLEEP_PER_S * (BED_BONUS if in_bed else 1)
+        self.sleep_bed = self.bed if in_bed else None
+        rate = ENERGY_SLEEP_PER_S * (self.bed.BONUS if in_bed else 1)
         need = (95 - self.stats.energy) / rate
         s = self.sleepiness()
         secs = max(random.uniform(SLEEP_MIN_S, SLEEP_MAX_S) * s, min(need, SLEEP_LONGEST_S * s))
@@ -454,21 +461,30 @@ class PetWindow(QWidget):
         elif self.on_surface():
             self.y = self.surface_y("sleep")     # lying body sits a bit lower
 
+    def leave_bed(self):
+        self.in_bed = False
+        self.sleep_bed = None
+        self.goal = None
+        self.state = "fall"
+        self.vy = 0
+
     # ---------- play ----------
-    def go_play(self):
-        if self.ball is None or self.stats.energy <= PLAY_MIN_ENERGY or self.perch is not None:
+    def go_play(self, toy=None):
+        toys = self.home.toys()
+        if not toys or self.stats.energy <= PLAY_MIN_ENERGY or self.perch is not None:
             return False
+        self.toy = toy if toy in toys else random.choice(toys)
         self.play_left = random.randint(*KICKS)
-        self.set_goal("ball")
+        self.set_goal("toy")
         return True
 
-    def kick_ball(self):
+    def kick_toy(self):
         self.facing = self.goal_side
-        self.ball.kick(self.facing * random.uniform(5, 9))
+        self.toy.kick(self.facing * random.uniform(*self.toy.KICK))
         self.played()
         self.play_left -= 1
         if self.play_left > 0 and self.stats.energy > PLAY_MIN_ENERGY:
-            self.set_goal("ball")                # chase it again
+            self.set_goal("toy")                 # chase it again
         else:
             self.start_idle()
 
@@ -650,6 +666,14 @@ class PetWindow(QWidget):
             self.say("greet_long", force=True)
         elif away > 3600:
             self.say("greet", force=True)
+        self.collect_bonus()
+
+    def collect_bonus(self):
+        """First visit of the day pays a bonus (checked again when the date changes)."""
+        coins = self.stats.daily_bonus(time.time())
+        if coins:
+            self.spawn_text(f"+{coins}", COIN_TEXT, delay=20)
+            self.spawn_text("daily bonus", COIN_TEXT, delay=34)
 
     def chatter(self, now):
         """Every so often, mention how it feels; and notice when it gets late."""
@@ -661,6 +685,8 @@ class PetWindow(QWidget):
             self.say("night")
         elif not night:
             self.night_said = False
+        if self.t % 900 == 0:
+            self.collect_bonus()                 # left running past midnight
         if now - self.last_needs_talk < NEEDS_TALK_S:
             return
         self.last_needs_talk = now
@@ -748,7 +774,8 @@ class PetWindow(QWidget):
         self.t += 1
         now = time.time()
         self.home.tick()
-        self.stats.update(now, sleeping=(self.state == "sleep"), in_bed=self.in_bed)
+        bonus = self.sleep_bed.BONUS if self.sleep_bed is not None else 1
+        self.stats.update(now, sleeping=(self.state == "sleep"), in_bed=self.in_bed, bed_bonus=bonus)
         if self.t % 30 == 0:
             self.mood = self.stats.mood(now)
             self.chatter(now)
@@ -915,6 +942,11 @@ class PetWindow(QWidget):
         p.save()
         p.translate(0, PAD_TOP)
         self.species.paint(p, self.pose(), self.facing, self.t, self.frame, look=self.look)
+        if self.inventory.worn:
+            if self.facing < 0:
+                p.translate(self.species.width, 0)
+                p.scale(-1, 1)
+            accessories.paint(p, self.inventory.worn, self.species, self.pose())
         p.restore()
         self.paint_floaters(p)
         p.end()
@@ -962,12 +994,12 @@ class PetWindow(QWidget):
 
     def show_menu(self, global_pos):
         menu = QMenu(self)
+        menu.addAction(f"Store…   🪙 {self.stats.coins}").triggered.connect(self.open_store)
+        treats = self.inventory.food.get("treat", 0)
+        if treats:
+            menu.addAction(f"Give a treat (× {treats})").triggered.connect(self.give_treat)
         if self.bowl is not None:
-            fill = menu.addAction("Fill food bowl")
-            fill.setEnabled(not self.bowl.full)
-            fill.triggered.connect(self.bowl.fill)
-        coins = menu.addAction(f"Coins: {self.stats.coins}")
-        coins.setEnabled(False)
+            self.add_fill_actions(menu)
         menu.addSeparator()
         for label, value, slot in (("Walk on surfaces only", self.taskbar_only, self.set_taskbar_only),
                                    ("Climb on windows", self.climb, self.set_climb),
@@ -979,6 +1011,102 @@ class PetWindow(QWidget):
         menu.addSeparator()
         menu.addAction("Quit").triggered.connect(QApplication.quit)
         menu.exec(global_pos)
+
+    def add_fill_actions(self, menu):
+        if self.bowl.full:
+            menu.addAction("Food bowl is full").setEnabled(False)
+            return
+        meals = {k: n for k, n in self.inventory.food.items() if store.ITEMS[k]["kind"] == "meal"}
+        if not meals:
+            menu.addAction("Fill food bowl").triggered.connect(lambda: self.fill_bowl("kibble"))
+            return
+        sub = menu.addMenu("Fill food bowl")
+        sub.addAction("Kibble (free)").triggered.connect(lambda: self.fill_bowl("kibble"))
+        for k, n in meals.items():
+            it = store.ITEMS[k]
+            sub.addAction(f"{it['icon']} {it['name']} (× {n})").triggered.connect(
+                lambda _=False, food=k: self.fill_bowl(food))
+
+    def furniture_menu(self, item):
+        menu = QMenu()
+        if item is self.bowl:
+            self.add_fill_actions(menu)
+            menu.addSeparator()
+        menu.addAction("Put away").triggered.connect(lambda: self.put_away(item.kind))
+        menu.addAction("Store…").triggered.connect(self.open_store)
+        menu.exec(QCursor.pos())
+
+    # ------------------------------------------------------------------
+    # store actions (the store window and menus call these)
+    # ------------------------------------------------------------------
+    def open_store(self):
+        from store_window import StoreWindow       # only built when first opened
+        if self.store_window is None:
+            self.store_window = StoreWindow(self)
+        else:
+            self.store_window.rebuild()
+        self.store_window.show()
+        self.store_window.raise_()
+        self.store_window.activateWindow()
+
+    def buy(self, item_id):
+        if not self.inventory.buy(item_id, self.stats, self.species.name):
+            return False
+        kind = store.ITEMS[item_id]["kind"]
+        if kind == "furniture":
+            self.place(item_id)
+        elif kind == "wear":
+            self.inventory.wear(item_id)
+        self.spawn_hearts()
+        self.say("gift", force=True)
+        return True
+
+    def resolve_furniture(self):
+        self.bowl = self.home.first("bowl")
+        self.bed = self.home.best_bed()
+
+    def place(self, kind):
+        if kind in self.inventory.owned and self.home.add(kind) is not None:
+            self.resolve_furniture()
+            self.raise_()
+
+    def put_away(self, kind):
+        item = self.home.first(kind)
+        if item is None:
+            return
+        if self.goal_item() is item:
+            self.start_idle()
+        if item is self.sleep_bed and self.in_bed:
+            self.leave_bed()
+        if item is self.bowl and self.state == "eat":
+            self.start_idle()
+        if item is self.toy:
+            self.toy = None
+        self.home.remove(kind)
+        self.resolve_furniture()
+
+    def wear(self, item_id):
+        if self.inventory.wear(item_id):
+            self.spawn_hearts(2)
+
+    def take_off(self, slot):
+        self.inventory.take_off(slot)
+
+    def give_treat(self):
+        if self.state == "held" or not self.inventory.use_food("treat"):
+            return
+        it = store.ITEMS["treat"]
+        ev = self.stats.snack(time.time(), food=it["food"], love=it["love"])
+        self.spawn_hearts(4)
+        self.react(ev)
+        self.say("treat", force=True)
+
+    def fill_bowl(self, food="kibble"):
+        if self.bowl is None or self.bowl.full:
+            return
+        if food != "kibble" and not self.inventory.use_food(food):
+            return
+        self.bowl.fill(food)
 
     # ------------------------------------------------------------------
     def save_state(self):
@@ -993,5 +1121,6 @@ class PetWindow(QWidget):
             "times_petted": self.times_petted,
             "stats": self.stats.to_dict(time.time()),
             "furniture": self.home.to_list(),
+            "inventory": self.inventory.to_dict(),
         })
         savemod.save(self.data)

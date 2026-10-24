@@ -10,7 +10,7 @@ import time
 FULLNESS_PER_S = 20 / 3600         # food drops 20 points an hour
 ENERGY_DRAIN_PER_S = 100 / 5400    # awake: empty after 90 minutes
 ENERGY_SLEEP_PER_S = 1.5           # napping recovers fast
-BED_BONUS = 2                      # ...and twice as fast in the pet bed
+BED_BONUS = 2                      # ...and twice as fast in the pet bed (deluxe bed: 3)
 OFFLINE_REST_PER_S = 100 / 1800    # app closed: fully rested after 30 minutes
 OFFLINE_CAP_S = 8 * 3600           # a long absence counts as at most 8 hours
 ONLINE_GAP_S = 60                  # bigger gaps while running (laptop slept) count as offline
@@ -24,6 +24,10 @@ PET_COINS_PER_DAY = 20
 PLAY_COOLDOWN_S = 8
 PLAY_AFFECTION = 1
 PLAY_ENERGY = 2                    # every kick of the ball tires it a little
+PLAY_COINS_PER_DAY = 15
+DAILY_BONUS = 10                   # first launch of the day
+DAILY_STREAK_STEP = 2              # +2 more for each day in a row...
+DAILY_STREAK_MAX = 5               # ...up to +10
 RECENT_PET_S = 600                 # petting and playing cheer it up for 10 minutes
 
 # (affection needed, name); reaching a level unlocks UNLOCKS[level]
@@ -61,6 +65,10 @@ class Stats:
         self.coins = int(s.get("coins", 0))
         self.pet_coin_day = s.get("pet_coin_day", "")
         self.pet_coins_today = int(s.get("pet_coins_today", 0))
+        self.play_coin_day = s.get("play_coin_day", "")
+        self.play_coins_today = int(s.get("play_coins_today", 0))
+        self.bonus_day = s.get("bonus_day", "")
+        self.streak = int(s.get("streak", 0))
         self._last_reward = None
         self._last_play_reward = None
         self._recent_pets = []
@@ -73,7 +81,7 @@ class Stats:
     # ------------------------------------------------------------------
     # time passing
     # ------------------------------------------------------------------
-    def update(self, now, sleeping, in_bed=False):
+    def update(self, now, sleeping, in_bed=False, bed_bonus=BED_BONUS):
         dt = now - self._last_update
         self._last_update = now
         if dt > ONLINE_GAP_S:
@@ -81,7 +89,7 @@ class Stats:
         elif dt > 0:
             self.fullness = _clamp(self.fullness - FULLNESS_PER_S * dt)
             if sleeping:
-                rate = ENERGY_SLEEP_PER_S * (BED_BONUS if in_bed else 1)
+                rate = ENERGY_SLEEP_PER_S * (bed_bonus if in_bed else 1)
                 self.energy = _clamp(self.energy + rate * dt)
             else:
                 self.energy = _clamp(self.energy - ENERGY_DRAIN_PER_S * dt)
@@ -112,16 +120,25 @@ class Stats:
         ev["level_up"] = self._level_up(before)
         return ev
 
-    def feed(self, now):
+    def feed(self, now, meal=MEAL, love=FEED_AFFECTION):
+        """Ate a bowl of food (kibble by default; store food is bigger)."""
         before = self.level()
-        self.fullness = min(100.0, self.fullness + MEAL)
-        self.affection += FEED_AFFECTION
+        self.fullness = min(100.0, self.fullness + meal)
+        self.affection += love
         self.coins += FEED_COINS
         return {"coins": FEED_COINS, "level_up": self._level_up(before)}
 
+    def snack(self, now, food, love):
+        """A treat from your hand: no coins, it's already a reward."""
+        before = self.level()
+        self.fullness = min(100.0, self.fullness + food)
+        self.affection += love
+        self._recent_pets.append(now)
+        return {"coins": 0, "level_up": self._level_up(before)}
+
     def play(self, now):
         """The pet kicked its ball."""
-        ev = {"rewarded": False, "level_up": None}
+        ev = {"rewarded": False, "coins": 0, "level_up": None}
         self.energy = _clamp(self.energy - PLAY_ENERGY)
         if self._last_play_reward is not None and now - self._last_play_reward < PLAY_COOLDOWN_S:
             return ev
@@ -129,12 +146,36 @@ class Stats:
         self._recent_pets.append(now)
         before = self.level()
         self.affection += PLAY_AFFECTION
+        if self.play_coin_day != _day(now):
+            self.play_coin_day, self.play_coins_today = _day(now), 0
+        if self.play_coins_today < PLAY_COINS_PER_DAY:
+            self.play_coins_today += 1
+            self.coins += 1
+            ev["coins"] = 1
         ev["rewarded"] = True
         ev["level_up"] = self._level_up(before)
         return ev
 
+    def daily_bonus(self, now):
+        """Coins for the first visit of the day (0 if already collected).
+        Coming back on consecutive days grows the bonus."""
+        today = _day(now)
+        if self.bonus_day == today:
+            return 0
+        self.streak = self.streak + 1 if self.bonus_day == _day(now - 86400) else 1
+        self.bonus_day = today
+        coins = DAILY_BONUS + DAILY_STREAK_STEP * min(self.streak - 1, DAILY_STREAK_MAX)
+        self.coins += coins
+        return coins
+
     def add_coins(self, n):
         self.coins += n
+
+    def spend(self, n):
+        if n > self.coins:
+            return False
+        self.coins -= n
+        return True
 
     def is_hungry(self):
         return self.fullness < HUNGRY_AT
@@ -197,5 +238,9 @@ class Stats:
             "coins": self.coins,
             "pet_coin_day": self.pet_coin_day,
             "pet_coins_today": self.pet_coins_today,
+            "play_coin_day": self.play_coin_day,
+            "play_coins_today": self.play_coins_today,
+            "bonus_day": self.bonus_day,
+            "streak": self.streak,
             "last_seen": now,
         }

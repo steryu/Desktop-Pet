@@ -34,7 +34,9 @@ A transparent, always-on-top pet that lives on your desktop. It walks, sleeps, g
 - `personality.py`: time of day, idle choices, speech lines, random events
 - `bubble.py`, `butterfly.py`: speech bubble and event critter windows
 - `desktop_windows.py`: other apps' windows, for sitting on top of them
-- `store.py`: items and coins (Phase 5)
+- `store.py`: store catalog and inventory
+- `store_window.py`: the store window
+- `accessories.py`: hats and collars drawn on any species
 
 ## Phases
 
@@ -77,12 +79,12 @@ A transparent, always-on-top pet that lives on your desktop. It walks, sleeps, g
 
 ### Phase 5: Store and economy
 
-- [ ] Coin balance, saved with the pet
-- [ ] Store window with categories
-- [ ] Buyable items: food types, toys, beds, hats and collars, decorations
-- [ ] Inventory and placing items on the desktop
-- [ ] Coin sources: daily login bonus, feeding, petting, playing
-- [ ] Balanced prices so coins feel earned but not grindy
+- [x] Coin balance, saved with the pet
+- [x] Store window with categories
+- [x] Buyable items: food types, toys, beds, hats and collars, decorations
+- [x] Inventory and placing items on the desktop
+- [x] Coin sources: daily login bonus, feeding, petting, playing
+- [x] Balanced prices so coins feel earned but not grindy
 
 ### Phase 6: Polish and sharing
 
